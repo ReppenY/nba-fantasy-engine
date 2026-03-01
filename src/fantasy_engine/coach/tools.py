@@ -7,6 +7,17 @@ to call based on the user's question, then explains the results.
 
 TOOLS = [
     {
+        "name": "get_team_strategy",
+        "description": (
+            "Get the complete team rebuilding strategy: which 5 categories to build around, "
+            "which 4 to punt, position-by-position needs with target archetypes, "
+            "specific trade targets, FA auction targets, rookie draft plan, "
+            "players to sell, and a timeline. Use this for any strategic question: "
+            "'what should I focus on?', 'what kind of players do I need?', 'what's my plan?'"
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_monopolies",
         "description": (
             "Detect category monopolies: find categories where few players provide elite production "

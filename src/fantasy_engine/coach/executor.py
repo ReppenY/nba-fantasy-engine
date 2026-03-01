@@ -44,6 +44,8 @@ def execute_tool(name: str, input: dict) -> str:
             return _get_free_agents(state, input)
         elif name == "get_league_standings":
             return _get_league_standings(state, input)
+        elif name == "get_team_strategy":
+            return _get_team_strategy(state, input)
         elif name == "get_monopolies":
             return _get_monopolies(state, input)
         elif name == "get_rotation_alerts":
@@ -351,6 +353,49 @@ def _get_league_standings(state, input):
     for i, t in enumerate(teams):
         t["power_rank"] = i + 1
     return json.dumps({"teams": teams})
+
+
+def _get_team_strategy(state, input):
+    if not state.all_teams:
+        return json.dumps({"error": "Full league data needed"})
+    from fantasy_engine.analytics.strategy import generate_strategy
+    s = generate_strategy(
+        state.z_df, state.all_teams, state.all_rostered_z,
+        state.team_id, state.category_scarcity, state.injuries,
+        state.settings.salary_cap,
+    )
+    return json.dumps({
+        "category_build": {
+            "target_5": s.category_build.target_5,
+            "punt_4": s.category_build.punt_4,
+            "expected_wins": s.category_build.expected_weekly_wins,
+            "rationale": s.category_build.rationale,
+        },
+        "position_needs": [
+            {"position": n.position, "need_level": n.need_level,
+             "archetype": n.target_archetype, "current_best_z": n.current_best_z}
+            for n in s.position_needs
+        ],
+        "extensions": [
+            {"name": t.name, "cost": t.estimated_cost, "z": t.z_total, "fits": t.fits_cats}
+            for t in s.extension_targets
+        ],
+        "trade_targets": [
+            {"name": t.name, "team": t.team, "z": t.z_total, "age": t.age, "why": t.why}
+            for t in s.trade_targets[:5]
+        ],
+        "fa_auction_targets": [
+            {"name": t.name, "z": t.z_total, "cost": t.estimated_cost, "why": t.why}
+            for t in s.fa_auction_targets[:5]
+        ],
+        "sell_candidates": [
+            {"name": t.name, "z": t.z_total, "why": t.why}
+            for t in s.sell_candidates
+        ],
+        "immediate_actions": s.immediate_actions,
+        "offseason_plan": s.offseason_plan,
+        "two_year_outlook": s.two_year_outlook,
+    })
 
 
 def _get_monopolies(state, input):

@@ -99,11 +99,32 @@ def load_full_league(
     print("  Identifying free agents...")
     from fantasy_engine.ingestion.fantrax_api import _normalize_name
 
-    rostered_normalized = {_normalize_name(n) for n in all_rostered["name"]}
+    # Build rostered name set with multiple match keys:
+    # - Full normalized name
+    # - Last name only (for first-name variant matching like Nic/Nicolas)
+    rostered_normalized = set()
+    rostered_last_first = set()  # (last_name, first_initial) tuples
+    for n in all_rostered["name"]:
+        norm = _normalize_name(n)
+        rostered_normalized.add(norm)
+        parts = norm.split()
+        if len(parts) >= 2:
+            rostered_last_first.add((parts[-1], parts[0][0]))
 
-    fa_mask = nba_stats["name"].apply(
-        lambda n: _normalize_name(n) not in rostered_normalized
-    )
+    def _is_rostered(nba_name):
+        norm = _normalize_name(nba_name)
+        # Exact match
+        if norm in rostered_normalized:
+            return True
+        # Last name + first initial match (handles Nic/Nicolas, Cam/Cameron, etc.)
+        parts = norm.split()
+        if len(parts) >= 2:
+            key = (parts[-1], parts[0][0])
+            if key in rostered_last_first:
+                return True
+        return False
+
+    fa_mask = nba_stats["name"].apply(lambda n: not _is_rostered(n))
     fa_stats = nba_stats[fa_mask].copy()
 
     # Filter to meaningful FAs (enough games/minutes)

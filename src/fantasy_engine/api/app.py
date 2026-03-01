@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fantasy_engine.api.deps import init_state, init_state_live, init_state_full
-from fantasy_engine.api.routers import players, teams, trades, matchups, lineup, waiver, dynasty, admin, chat, league, offseason, trade_intelligence, draft_room, metrics, trends, weekly_lineup, insights
+from fantasy_engine.api.routers import players, teams, trades, matchups, lineup, waiver, dynasty, admin, chat, league, offseason, trade_intelligence, draft_room, metrics, trends, weekly_lineup, insights, strategy
 
 # Default league/team config
 DEFAULT_LEAGUE_ID = "z9agcf24meqwg9yw"
@@ -87,6 +87,7 @@ app.include_router(draft_room.router, prefix="/draft", tags=["Draft Room"])
 app.include_router(metrics.router, prefix="/metrics", tags=["Advanced Metrics"])
 app.include_router(weekly_lineup.router, prefix="/weekly-lineup", tags=["Weekly Lineup Optimizer"])
 app.include_router(insights.router, prefix="/insights", tags=["Insights"])
+app.include_router(strategy.router, prefix="/strategy", tags=["Strategy"])
 app.include_router(trends.router, prefix="/trends", tags=["Trends & External"])
 app.include_router(offseason.router, prefix="/offseason", tags=["Off-Season"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
