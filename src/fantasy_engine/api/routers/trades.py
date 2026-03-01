@@ -15,10 +15,19 @@ def evaluate(
     state: LeagueState = Depends(get_state),
 ):
     try:
+        import pandas as pd
+        # Combine my roster with all rostered players so we can find
+        # players from other teams (the "receive" side)
+        if state.all_rostered_z is not None:
+            combined = pd.concat([state.z_df, state.all_rostered_z], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["name"], keep="first")
+        else:
+            combined = state.z_df
+
         ev = evaluate_trade(
             give_names=req.give,
             receive_names=req.receive,
-            roster_z_df=state.z_df,
+            roster_z_df=combined,
             salary_cap=state.settings.salary_cap,
             punt_cats=req.punt_cats,
         )
