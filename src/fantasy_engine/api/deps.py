@@ -410,9 +410,10 @@ def init_state_full(
             lineup_patterns = analyze_lineup_patterns(lineup_df)
             print(f"  Lineup patterns loaded: {len(lineup_patterns)} teams")
 
+        print(f"  Trade Intel team_id: {team_id}, state.team_id: {_state.team_id}")
         _state.trade_intelligence = TradeIntelligence(
             all_teams=_state.all_teams,
-            my_team_id=team_id,
+            my_team_id=_state.team_id,  # Use state's team_id, not the parameter
             my_roster_z=_state.z_df,
             salary_cap=settings.salary_cap,
             completed_trades=completed_trades,

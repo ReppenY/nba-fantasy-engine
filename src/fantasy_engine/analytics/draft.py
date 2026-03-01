@@ -74,17 +74,21 @@ def compute_auction_values(
     # Z above replacement
     z_df["z_above_replacement"] = (z_df["z_total"] - replacement_z).clip(lower=0)
 
-    # Apply consistency premium: reliable players are worth more at auction
-    # A perfectly consistent player (1.0) gets full value; volatile (0.5) gets 85%
+    # Apply consistency premium
     if "consistency_rating" in z_df.columns:
         cons = z_df["consistency_rating"].fillna(0.5)
-        consistency_premium = 0.85 + 0.15 * cons  # Range: 0.85 to 1.0
+        consistency_premium = 0.85 + 0.15 * cons
         z_df["z_above_replacement"] = z_df["z_above_replacement"] * consistency_premium
 
     # Total surplus budget
-    total_budget = salary_cap * num_teams
-    total_min_cost = min_bid * roster_size * num_teams
-    total_surplus = total_budget - total_min_cost
+    # Calibrated from actual draft data: teams spend ~$50-90 each, not the full cap.
+    # The cap is $233 but most budget goes to existing contracts from prior years.
+    # In a dynasty auction, only ~30-40% of cap is available for new players.
+    # Using actual league data: avg spend was ~$60/team, top was $88.
+    draft_budget_per_team = salary_cap * 0.35  # ~35% of cap available for draft
+    total_budget = draft_budget_per_team * num_teams
+    total_min_cost = min_bid * roster_size * 0.3 * num_teams  # Only ~30% of roster drafted
+    total_surplus = max(total_budget - total_min_cost, 100)
 
     # Distribute surplus proportionally
     total_z_above = z_df["z_above_replacement"].sum()

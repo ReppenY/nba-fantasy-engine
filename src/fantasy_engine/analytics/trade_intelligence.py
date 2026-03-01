@@ -614,6 +614,7 @@ class TradeIntelligence:
 
         profiles = self.manager_profiles
         tradeable = self.tradeable_players
+
         matrix = self.trade_matrix
 
         my_profile = analyze_team(self._my_roster_z)
@@ -648,8 +649,21 @@ class TradeIntelligence:
             opp_needs = get_need_weights(opp_profile)
             partner_prob = partner_probs.get(opp_name, 0.3)
 
-            # Get my expendable players (what I'd give)
+            # Get my tradeable players (expendables first, then all if empty)
             my_tradeable = tradeable.get(self._my_team_id, [])
+            if not my_tradeable:
+                # Fall back to all roster players sorted by z-total ascending (worst first = most tradeable)
+                my_sorted = self._my_roster_z.sort_values("z_total", ascending=True)
+                my_tradeable = [
+                    TradeablePlayer(
+                        name=row.get("name", ""), team="", salary=row.get("salary", 0),
+                        z_total=round(row.get("z_total", 0), 2), age=int(row.get("age", 0)),
+                        years_remaining=int(row.get("years_remaining", 1)),
+                        reasons=[], trade_block_score=0,
+                    )
+                    for _, row in my_sorted.head(10).iterrows()
+                    if row.get("games_played", 0) >= 5
+                ]
             # For receiving: look at ALL their players (we want good ones, not their expendables)
             # But also check their expendables as realistic targets
             opp_expendable_names = {p.name for p in tradeable.get(tid, [])}
@@ -658,38 +672,40 @@ class TradeIntelligence:
             for _, their_row in opp_rz.iterrows():
                 if their_row.get("games_played", 0) < 5:
                     continue
-                if their_row.empty:
-                    continue
-                their_row = their_row.iloc[0]
 
                 # How much does this player help me?
                 my_gain = 0.0
                 for cat in ALL_CATS:
-                    z_val = their_row[f"z_{cat}"] if f"z_{cat}" in their_row.index else 0
-                    my_gain += float(z_val) * my_needs.get(cat, 1.0)
+                    z_col = f"z_{cat}"
+                    z_val = float(their_row.get(z_col, 0) or 0)
+                    my_gain += z_val * my_needs.get(cat, 1.0)
 
                 if my_gain <= 0:
                     continue
 
+                their_name = their_row.get("name", "?")
+                their_sal = float(their_row.get("salary", 0) or 0)
+
                 # Find a matching player from my side they'd want
-                for my_player in my_tradeable[:8]:
+                for my_player in my_tradeable[:10]:
                     my_row = self._my_roster_z[self._my_roster_z["name"] == my_player.name]
                     if my_row.empty:
                         continue
                     my_row = my_row.iloc[0]
 
-                    # Salary check
-                    sal_diff = abs(their_row.get("salary", 0) - my_row.get("salary", 0))
-                    if sal_diff > 20:
-                        continue
+                    # No salary restriction — dynasty leagues trade across salary levels
+                    # (the salary cap handles constraints, not individual trade balance)
+                    sal_diff = abs(their_sal - float(my_row.get("salary", 0) or 0))
 
                     # How much does my player help them?
                     their_gain = 0.0
                     for cat in ALL_CATS:
-                        z_val = my_row[f"z_{cat}"] if f"z_{cat}" in my_row.index else 0
-                        their_gain += float(z_val) * opp_needs.get(cat, 1.0)
+                        z_val = float(my_row.get(f"z_{cat}", 0) or 0)
+                        their_gain += z_val * opp_needs.get(cat, 1.0)
 
-                    if their_gain <= 0:
+                    # In dynasty, teams might accept losing z-score for
+                    # salary relief, picks, or youth — so only filter extreme losses
+                    if their_gain < -15:
                         continue
 
                     # Acceptance likelihood
