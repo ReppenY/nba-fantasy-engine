@@ -128,8 +128,7 @@ def evaluate_trade(
     give_salary = give_df["salary"].sum()
     recv_salary = recv_df["salary"].sum()
     salary_impact = recv_salary - give_salary
-    current_total_salary = roster_z_df["salary"].sum()
-    cap_after = salary_cap - (current_total_salary + salary_impact)
+    cap_after = salary_cap - salary_impact  # Net impact on cap
 
     # Dynasty value
     give_dynasty = _compute_dynasty_total(give_df)

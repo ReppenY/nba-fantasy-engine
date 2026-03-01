@@ -693,9 +693,27 @@ class TradeIntelligence:
                         continue
                     my_row = my_row.iloc[0]
 
-                    # No salary restriction — dynasty leagues trade across salary levels
-                    # (the salary cap handles constraints, not individual trade balance)
-                    sal_diff = abs(their_sal - float(my_row.get("salary", 0) or 0))
+                    # Salary cap feasibility: both teams must have room to absorb
+                    my_sal = float(my_row.get("salary", 0) or 0)
+                    sal_diff = abs(their_sal - my_sal)
+
+                    # Check if opponent can absorb my player's salary
+                    # They give away their_sal and take on my_sal
+                    opp_salary_change = my_sal - their_sal  # Positive = they take on more
+                    my_salary_change = their_sal - my_sal   # Positive = I take on more
+
+                    opp_profile_data = profiles.get(tid)
+                    if opp_profile_data:
+                        opp_cap_room = opp_profile_data.cap_room
+                        if opp_salary_change > opp_cap_room:
+                            continue  # They can't afford to take on my player
+
+                    # Check if I can absorb their player's salary
+                    my_profile_data = profiles.get(self._my_team_id)
+                    if my_profile_data:
+                        my_cap_room = my_profile_data.cap_room
+                        if my_salary_change > my_cap_room:
+                            continue  # I can't afford to take on their player
 
                     # How much does my player help them?
                     their_gain = 0.0
