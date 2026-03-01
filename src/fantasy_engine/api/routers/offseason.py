@@ -234,14 +234,14 @@ class PickAssetResponse(BaseModel):
     current_owner: str
     estimated_pick_number: int
     estimated_overall: int
-    dollar_value: float
+    expected_z: float
     is_lottery: bool
     confidence: str
 
 
 class PickPortfolioResponse(BaseModel):
     team_name: str
-    total_value: float
+    total_expected_z: float
     num_first_rounders: int
     num_lottery_picks: int
     picks_owned: list[PickAssetResponse]
@@ -280,13 +280,13 @@ def get_pick_portfolio(state: LeagueState = Depends(get_state)):
         return PickAssetResponse(
             year=p.year, round=p.round, original_team=p.original_team,
             current_owner=p.current_owner, estimated_pick_number=p.estimated_pick_number,
-            estimated_overall=p.estimated_overall, dollar_value=p.dollar_value,
+            estimated_overall=p.estimated_overall, expected_z=p.expected_z,
             is_lottery=p.is_lottery, confidence=p.confidence,
         )
 
     return PickPortfolioResponse(
         team_name=portfolio.team_name,
-        total_value=portfolio.total_value,
+        total_expected_z=portfolio.total_expected_z,
         num_first_rounders=portfolio.num_first_rounders,
         num_lottery_picks=portfolio.num_lottery_picks,
         picks_owned=[_pick_resp(p) for p in portfolio.picks_owned],
@@ -315,10 +315,10 @@ def get_all_portfolios(state: LeagueState = Depends(get_state)):
     portfolios = build_all_portfolios(picks_data, state.team_names, standings)
 
     result = []
-    for tid, port in sorted(portfolios.items(), key=lambda x: x[1].total_value, reverse=True):
+    for tid, port in sorted(portfolios.items(), key=lambda x: x[1].total_expected_z, reverse=True):
         result.append({
             "team": port.team_name,
-            "total_value": port.total_value,
+            "total_expected_z": port.total_expected_z,
             "picks_owned": len(port.picks_owned),
             "first_rounders": port.num_first_rounders,
             "lottery_picks": port.num_lottery_picks,

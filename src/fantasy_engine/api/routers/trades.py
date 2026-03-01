@@ -8,6 +8,40 @@ from fantasy_engine.analytics.trade_eval import evaluate_trade
 router = APIRouter()
 
 
+@router.get("/my-picks", description="Get draft picks I own (for trade give side).")
+def get_my_picks(state: LeagueState = Depends(get_state)):
+    import requests
+    r = requests.get("https://www.fantrax.com/fxea/general/getDraftPicks",
+                     params={"leagueId": "z9agcf24meqwg9yw"}, timeout=15)
+    picks = r.json().get("futureDraftPicks", [])
+    my_picks = [p for p in picks if p.get("currentOwnerTeamId") == state.team_id]
+    # Format as readable strings
+    team_names = state.team_names or {}
+    result = []
+    for p in sorted(my_picks, key=lambda x: (x["year"], x["round"])):
+        orig = team_names.get(p["originalOwnerTeamId"], p["originalOwnerTeamId"])
+        label = f"{p['year']} Round {p['round']} ({orig})"
+        result.append(label)
+    return result
+
+
+@router.get("/other-picks", description="Get draft picks owned by other teams (for trade receive side).")
+def get_other_picks(state: LeagueState = Depends(get_state)):
+    import requests
+    r = requests.get("https://www.fantrax.com/fxea/general/getDraftPicks",
+                     params={"leagueId": "z9agcf24meqwg9yw"}, timeout=15)
+    picks = r.json().get("futureDraftPicks", [])
+    other_picks = [p for p in picks if p.get("currentOwnerTeamId") != state.team_id]
+    team_names = state.team_names or {}
+    result = []
+    for p in sorted(other_picks, key=lambda x: (x["year"], x["round"])):
+        owner = team_names.get(p["currentOwnerTeamId"], "")
+        orig = team_names.get(p["originalOwnerTeamId"], "")
+        label = f"{p['year']} Round {p['round']} ({orig}) — owned by {owner}"
+        result.append(label)
+    return result
+
+
 @router.get("/my-players", description="Get player names on MY roster (for trade give side).")
 def get_my_players(state: LeagueState = Depends(get_state)):
     return sorted(state.z_df["name"].tolist())

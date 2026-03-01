@@ -80,27 +80,60 @@ def compute_auction_values(
         consistency_premium = 0.85 + 0.15 * cons
         z_df["z_above_replacement"] = z_df["z_above_replacement"] * consistency_premium
 
-    # Total surplus budget
-    # Calibrated from actual draft data: teams spend ~$50-90 each, not the full cap.
-    # The cap is $233 but most budget goes to existing contracts from prior years.
-    # In a dynasty auction, only ~30-40% of cap is available for new players.
-    # Using actual league data: avg spend was ~$60/team, top was $88.
-    draft_budget_per_team = salary_cap * 0.35  # ~35% of cap available for draft
-    total_budget = draft_budget_per_team * num_teams
-    total_min_cost = min_bid * roster_size * 0.3 * num_teams  # Only ~30% of roster drafted
-    total_surplus = max(total_budget - total_min_cost, 100)
+    # EMPIRICAL MARKET VALUE
+    # Calibrated from actual 2025 dynasty auction draft results.
+    # Linear fit of actual bids vs z-scores: price = 2.09 * z + 7.55
+    #
+    # Key: use the HIGHER of current z-score or recent trend z-score.
+    # This prevents injured stars from being drastically undervalued.
+    # A player with z:+6 this season but z:+10 last 14 games is likely
+    # returning to form — their market value should reflect the upside.
+    MARKET_SLOPE = 2.09
+    MARKET_BASE = 7.55
 
-    # Distribute surplus proportionally
-    total_z_above = z_df["z_above_replacement"].sum()
-    if total_z_above > 0:
-        z_df["auction_value"] = (
-            min_bid + (z_df["z_above_replacement"] / total_z_above) * total_surplus
-        )
-    else:
-        z_df["auction_value"] = min_bid
+    # Use the better of current z or schedule-adjusted z (captures upside)
+    effective_z = z_df["z_total"].copy()
+    if "schedule_adjusted_z" in z_df.columns:
+        sched_z = z_df["schedule_adjusted_z"].fillna(0)
+        effective_z = np.maximum(effective_z, sched_z)
 
-    # For players below replacement, set to min bid
-    z_df.loc[z_df["z_above_replacement"] <= 0, "auction_value"] = min_bid
+    z_df["auction_value"] = (MARKET_SLOPE * effective_z + MARKET_BASE).clip(lower=min_bid)
+
+    # Star premium: elite players (z > 8) get bid up in real auctions
+    # because managers pay for name recognition and proven upside
+    star_bonus = np.where(effective_z > 8, (effective_z - 8) * 1.5, 0)
+    z_df["auction_value"] += star_bonus
+
+    # Minutes adjustment: players with fewer minutes are less valuable
+    # because their production is less reliable and they could lose their role.
+    # 30+ min = full value, 20-30 = slight discount, <20 = significant discount
+    if "minutes" in z_df.columns:
+        mins = z_df["minutes"].fillna(20)
+        min_mult = np.where(mins >= 30, 1.0,
+                   np.where(mins >= 20, 0.7 + 0.3 * ((mins - 20) / 10),
+                   np.where(mins >= 10, 0.4 + 0.3 * ((mins - 10) / 10),
+                   0.3)))
+        z_df["auction_value"] = z_df["auction_value"] * min_mult
+
+    # Age adjustment: gentler than before
+    # Young (<=24): +10% premium (dynasty upside)
+    # Prime (25-31): neutral (still productive)
+    # Aging (32-35): -5% per year over 31
+    # Old (36+): -10% per year over 35
+    if "age" in z_df.columns:
+        age = z_df["age"].fillna(27)
+        age_mult = np.where(age <= 24, 1.10,
+                   np.where(age <= 31, 1.0,
+                   np.where(age <= 35, np.maximum(0.7, 1.0 - 0.05 * (age - 31)),
+                   np.maximum(0.5, 0.8 - 0.10 * (age - 35)))))
+        z_df["auction_value"] = (z_df["auction_value"] * age_mult).clip(lower=min_bid)
+
+    z_df["auction_value"] = z_df["auction_value"].round(1)
+
+    # Z above replacement stays for tier calculation
+    z_df.loc[z_df["z_above_replacement"] <= 0, "auction_value"] = z_df.loc[
+        z_df["z_above_replacement"] <= 0, "auction_value"
+    ].clip(lower=min_bid, upper=3.0)  # Below replacement = min bid territory
 
     # Round
     z_df["auction_value"] = z_df["auction_value"].round(1)

@@ -26,7 +26,7 @@ class PickAsset:
     # Valuation
     estimated_pick_number: int = 0  # 1-12 within the round
     estimated_overall: int = 0      # Overall pick number (1-60)
-    dollar_value: float = 0.0       # Estimated auction dollar value
+    expected_z: float = 0.0         # Expected z-score of drafted player
     is_lottery: bool = False        # Will this team be in the lottery?
     confidence: str = "medium"      # How confident in the team's projected pick position
 
@@ -37,31 +37,45 @@ class PickPortfolio:
     team_name: str
     picks_owned: list[PickAsset]
     picks_traded_away: list[PickAsset]
-    total_value: float = 0.0
+    total_expected_z: float = 0.0
     num_first_rounders: int = 0
     num_lottery_picks: int = 0
 
 
 # ── Pick Value Table ──
-# Based on typical dynasty fantasy basketball pick values.
-# Round 1 lottery (1-6) are premium, Round 1 playoff (7-12) less so.
-# Later rounds drop off sharply.
+# These are ROOKIE DRAFT picks — not free agency auction.
+# Values are EXPECTED Z-SCORE of the rookie drafted.
+#
+# Rookie production in year 1 is much lower than established stars:
+# - #1 overall rookie (e.g., Wembanyama) might produce z:+3 to +5 in year 1
+# - Mid-first-rounder: z:+1 to +2
+# - Late first: z:0 to +1
+# - Round 2+: z:-1 to 0 (development players, might not contribute immediately)
+#
+# Dynasty value is HIGHER than year-1 z because:
+# - Rookies improve over 2-3 years
+# - They're on cheap contracts ($1)
+# - They have a long career ahead
+#
+# We use a "dynasty-adjusted" expected z that accounts for
+# both immediate production AND future trajectory.
 
-# Dollar values: what a player at that pick level is typically worth at auction
-PICK_BASE_VALUES = {
-    # Round 1
-    (1, 1): 40.0, (1, 2): 35.0, (1, 3): 30.0, (1, 4): 25.0,
-    (1, 5): 22.0, (1, 6): 19.0, (1, 7): 16.0, (1, 8): 14.0,
-    (1, 9): 12.0, (1, 10): 10.0, (1, 11): 8.0, (1, 12): 6.0,
-    # Round 2
-    (2, 1): 5.0, (2, 2): 4.5, (2, 3): 4.0, (2, 4): 3.5,
-    (2, 5): 3.0, (2, 6): 2.5, (2, 7): 2.0, (2, 8): 2.0,
-    (2, 9): 1.5, (2, 10): 1.5, (2, 11): 1.0, (2, 12): 1.0,
-    # Round 3
-    (3, 1): 1.0, (3, 2): 1.0, (3, 3): 1.0, (3, 4): 1.0,
-    (3, 5): 0.5, (3, 6): 0.5, (3, 7): 0.5, (3, 8): 0.5,
-    (3, 9): 0.5, (3, 10): 0.5, (3, 11): 0.5, (3, 12): 0.5,
-    # Round 4-5: minimal value
+PICK_EXPECTED_Z = {
+    # Round 1: lottery (picks 1-6) — top prospects
+    (1, 1): 4.0, (1, 2): 3.5, (1, 3): 3.0, (1, 4): 2.5,
+    (1, 5): 2.2, (1, 6): 2.0,
+    # Round 1: late (picks 7-12) — solid prospects
+    (1, 7): 1.7, (1, 8): 1.5, (1, 9): 1.2, (1, 10): 1.0,
+    (1, 11): 0.8, (1, 12): 0.5,
+    # Round 2 — deeper prospects, hit-or-miss
+    (2, 1): 0.4, (2, 2): 0.3, (2, 3): 0.2, (2, 4): 0.1,
+    (2, 5): 0.0, (2, 6): 0.0, (2, 7): -0.1, (2, 8): -0.2,
+    (2, 9): -0.3, (2, 10): -0.3, (2, 11): -0.4, (2, 12): -0.5,
+    # Round 3 — long shots
+    (3, 1): -0.5, (3, 2): -0.6, (3, 3): -0.7, (3, 4): -0.7,
+    (3, 5): -0.8, (3, 6): -0.8, (3, 7): -0.9, (3, 8): -0.9,
+    (3, 9): -1.0, (3, 10): -1.0, (3, 11): -1.0, (3, 12): -1.0,
+    # Round 4-5: lottery tickets
 }
 
 
@@ -111,27 +125,31 @@ def value_pick(
     current_year: int = 2026,
 ) -> float:
     """
-    Value a single draft pick in auction dollars.
+    Value a single draft pick as expected z-score of the player drafted.
 
-    Factors:
-    - Base value from pick table
-    - Year discount: future picks worth less (10% per year)
+    A Round 1 #1 pick is expected to produce ~z:+7.0 (a star).
+    A Round 3 #12 pick is expected to produce ~z:-1.0 (bench player).
+
+    Future picks are slightly discounted (5% per year) because of uncertainty.
     """
-    base = PICK_BASE_VALUES.get((round_num, pick_position))
+    base = PICK_EXPECTED_Z.get((round_num, pick_position))
     if base is None:
-        # Rounds 4-5 or unknown
         if round_num == 4:
-            base = 0.5
+            base = -1.5
         elif round_num >= 5:
-            base = 0.25
+            base = -2.0
         else:
-            base = 1.0
+            base = 0.0
 
-    # Year discount: 10% per year into the future
+    # Future discount: 5% per year (smaller than dollar discount
+    # because good players stay good)
     years_out = max(0, year - current_year)
-    discount = 0.90 ** years_out
-
-    return round(base * discount, 1)
+    if base > 0:
+        discount = 0.95 ** years_out
+        return round(base * discount, 1)
+    else:
+        # Negative picks don't discount — they're already bad
+        return round(base, 1)
 
 
 def build_pick_portfolio(
@@ -165,7 +183,7 @@ def build_pick_portfolio(
         # Estimate pick position based on original team's strength
         pick_pos, is_lottery, confidence = estimate_pick_position(orig_name, team_standings)
 
-        dollar_value = value_pick(year, round_num, pick_pos, current_year)
+        expected_z = value_pick(year, round_num, pick_pos, current_year)
 
         asset = PickAsset(
             year=year,
@@ -176,7 +194,7 @@ def build_pick_portfolio(
             current_owner_id=curr_id,
             estimated_pick_number=pick_pos,
             estimated_overall=(round_num - 1) * 12 + pick_pos,
-            dollar_value=dollar_value,
+            expected_z=expected_z,
             is_lottery=is_lottery,
             confidence=confidence,
         )
@@ -190,7 +208,7 @@ def build_pick_portfolio(
     owned.sort(key=lambda p: (p.year, p.round, p.estimated_pick_number))
     traded_away.sort(key=lambda p: (p.year, p.round))
 
-    total_value = sum(p.dollar_value for p in owned)
+    total_value = sum(p.expected_z for p in owned)
     first_rounders = len([p for p in owned if p.round == 1])
     lottery_picks = len([p for p in owned if p.round == 1 and p.is_lottery])
 
@@ -198,7 +216,7 @@ def build_pick_portfolio(
         team_name=team_name,
         picks_owned=owned,
         picks_traded_away=traded_away,
-        total_value=round(total_value, 1),
+        total_expected_z=round(total_value, 1),
         num_first_rounders=first_rounders,
         num_lottery_picks=lottery_picks,
     )

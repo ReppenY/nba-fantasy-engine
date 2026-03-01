@@ -150,16 +150,18 @@ def evaluate_trade(
             elif col == "playoff_games":
                 schedule_bonus += (recv_val - give_val) * 0.1
 
-    # Draft pick valuation
-    pick_value_change = 0.0
+    # Draft pick valuation in z-score terms
+    # A Round 1 lottery pick is expected to produce z:+7 (a star)
+    # This is directly comparable to player z-scores
+    pick_z_change = 0.0
     give_pick_list = give_picks or []
     recv_pick_list = receive_picks or []
     if give_pick_list or recv_pick_list:
-        from fantasy_engine.analytics.pick_valuation import value_pick
+        standings = _build_standings(roster_z_df)
         for pick_str in recv_pick_list:
-            pick_value_change += _parse_and_value_pick(pick_str)
+            pick_z_change += _parse_and_value_pick(pick_str, standings)
         for pick_str in give_pick_list:
-            pick_value_change -= _parse_and_value_pick(pick_str)
+            pick_z_change -= _parse_and_value_pick(pick_str, standings)
 
     # Combined score
     current_weight = 1.0 - dynasty_weight
@@ -167,7 +169,8 @@ def evaluate_trade(
         current_weight * weighted_score
         + dynasty_weight * dynasty_diff
         + schedule_bonus
-        + pick_value_change * 0.3  # Picks are ~30% weight in combined score
+        + pick_z_change * 0.5  # Picks valued at 50% of their expected z
+        # (discounted because pick production is uncertain)
     )
 
     # Verdict
@@ -239,7 +242,7 @@ def evaluate_trade(
             pick_lines.append(f"Giving picks: {', '.join(give_pick_list)}")
         if recv_pick_list:
             pick_lines.append(f"Receiving picks: {', '.join(recv_pick_list)}")
-        pick_lines.append(f"Pick value change: {pick_value_change:+.1f}")
+        pick_lines.append(f"Expected z-score from picks: {pick_z_change:+.1f} (positive = receiving more valuable picks)")
         explanation += "\n" + "\n".join(pick_lines)
     if position_warning:
         explanation = position_warning + "\n\n" + explanation
@@ -401,33 +404,61 @@ def format_trade_report(evaluation: TradeEvaluation) -> str:
     return "\n".join(lines)
 
 
-def _parse_and_value_pick(pick_str: str) -> float:
+def _parse_and_value_pick(pick_str: str, standings: list[dict] | None = None) -> float:
     """
-    Parse a pick string like "2027 Round 1" or "2028 Rd 2" and return dollar value.
+    Parse a pick string and return dollar value based on team standings.
 
     Supports formats:
-    - "2027 Round 1"
-    - "2028 Rd 2"
-    - "2026 R1"
-    - "2027 1st round"
+    - "2027 Round 1" — no team specified, assumes mid-round (#6)
+    - "2027 Round 1 (Team Ronen)" — uses Team Ronen's standing for position
+    - "2027 Round 1 lottery" — assumes lottery position (#3)
+    - "2027 Round 1 late" — assumes late pick (#10)
     """
     import re
-    from fantasy_engine.analytics.pick_valuation import value_pick
+    from fantasy_engine.analytics.pick_valuation import value_pick, estimate_pick_position
 
-    pick_str = pick_str.strip().lower()
+    original = pick_str.strip()
+    pick_lower = original.lower()
 
     # Extract year
-    year_match = re.search(r"20\d{2}", pick_str)
+    year_match = re.search(r"20\d{2}", pick_lower)
     year = int(year_match.group()) if year_match else 2026
 
     # Extract round
-    round_match = re.search(r"(?:round|rd|r)\s*(\d)", pick_str)
+    round_match = re.search(r"(?:round|rd|r)\s*(\d)", pick_lower)
     if not round_match:
-        round_match = re.search(r"(\d)(?:st|nd|rd|th)\s*(?:round|rd|r)", pick_str)
+        round_match = re.search(r"(\d)(?:st|nd|rd|th)\s*(?:round|rd|r)", pick_lower)
     if not round_match:
-        round_match = re.search(r"(\d)", pick_str.replace(str(year), ""))
-
+        # Try just a digit after removing the year
+        remaining = pick_lower.replace(str(year), "")
+        round_match = re.search(r"(\d)", remaining)
     round_num = int(round_match.group(1)) if round_match else 1
 
-    # Estimate pick position (assume middle of round = 6)
-    return value_pick(year, round_num, 6)
+    # Try to extract team name from parentheses: "2027 Round 1 (Team Ronen)"
+    team_match = re.search(r"\(([^)]+)\)", original)
+    team_name = team_match.group(1).strip() if team_match else ""
+
+    # Estimate pick position
+    pick_pos = 6  # Default: middle of round
+
+    if team_name and standings:
+        pick_pos, _, _ = estimate_pick_position(team_name, standings)
+    elif "lottery" in pick_lower or "top" in pick_lower:
+        pick_pos = 3  # Assume top lottery
+    elif "late" in pick_lower or "playoff" in pick_lower:
+        pick_pos = 10  # Assume late/playoff
+    elif "mid" in pick_lower:
+        pick_pos = 6
+
+    return value_pick(year, round_num, pick_pos)
+
+
+def _build_standings(roster_z_df: pd.DataFrame) -> list[dict]:
+    """Build standings from roster data for pick estimation."""
+    standings = []
+    if "fantasy_team_name" in roster_z_df.columns:
+        for team, group in roster_z_df.groupby("fantasy_team_name"):
+            total_z = group["z_total"].sum() if "z_total" in group.columns else 0
+            standings.append({"name": str(team), "total_z": total_z})
+    standings.sort(key=lambda t: t["total_z"], reverse=True)
+    return standings
