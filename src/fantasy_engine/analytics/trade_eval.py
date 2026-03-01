@@ -72,19 +72,40 @@ def evaluate_trade(
     if punt_cats is None:
         punt_cats = []
 
-    # Look up players
-    give_df = roster_z_df[roster_z_df["name"].isin(give_names)]
-    recv_df = roster_z_df[roster_z_df["name"].isin(receive_names)]
+    # Look up players (case-insensitive)
+    names_lower = roster_z_df["name"].str.lower()
+    give_lower = [n.lower().strip() for n in give_names]
+    recv_lower = [n.lower().strip() for n in receive_names]
 
-    if len(give_df) != len(give_names):
-        missing = set(give_names) - set(give_df["name"])
-        raise ValueError(f"Players not found in roster: {missing}")
-    if len(recv_df) != len(receive_names):
-        missing = set(receive_names) - set(recv_df["name"])
-        raise ValueError(f"Players not found: {missing}")
+    give_df = roster_z_df[names_lower.isin(give_lower)]
+    recv_df = roster_z_df[names_lower.isin(recv_lower)]
+
+    # Try partial matching for unmatched names
+    if len(give_df) < len(give_names):
+        for gn in give_lower:
+            if not names_lower.isin([gn]).any():
+                partial = roster_z_df[names_lower.str.contains(gn, na=False)]
+                if not partial.empty:
+                    give_df = pd.concat([give_df, partial.head(1)])
+
+    if len(recv_df) < len(receive_names):
+        for rn in recv_lower:
+            if not names_lower.isin([rn]).any():
+                partial = roster_z_df[names_lower.str.contains(rn, na=False)]
+                if not partial.empty:
+                    recv_df = pd.concat([recv_df, partial.head(1)])
+
+    if len(give_df) == 0:
+        raise ValueError(f"Players not found in roster: {give_names}")
+    if len(recv_df) == 0:
+        raise ValueError(f"Players not found: {receive_names}")
+
+    # Resolve actual names for downstream use
+    give_names = give_df["name"].tolist()
+    receive_names = recv_df["name"].tolist()
 
     # Build team profile (excluding players being traded away)
-    remaining_roster = roster_z_df[~roster_z_df["name"].isin(give_names)]
+    remaining_roster = roster_z_df[~names_lower.isin(give_lower)]
     team_profile = analyze_team(remaining_roster)
     need_weights = get_need_weights(team_profile, punt_cats)
 
