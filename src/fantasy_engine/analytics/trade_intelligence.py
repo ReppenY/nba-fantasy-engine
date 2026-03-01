@@ -721,14 +721,48 @@ class TradeIntelligence:
                     except Exception:
                         pass
 
-                    # Acceptance likelihood
+                    # Fairness check: the trade must be roughly balanced in total z-score
+                    # Nobody trades a z:+12 player for a z:+2 player regardless of category fit
+                    their_z = float(their_row.get("z_total", 0) or 0)
+                    my_z = float(my_row.get("z_total", 0) or 0)
+                    z_gap = their_z - my_z  # Positive = they're giving up more
+
+                    # If the gap is huge (>5), this trade is unrealistic
+                    if z_gap > 8:
+                        continue  # They'd never trade a star for a scrub
+                    if z_gap > 5:
+                        # Very unlikely — only if their player is expendable AND they desperately need ours
+                        if not (their_row.get("name", "") in opp_expendable_names and their_gain > 3):
+                            continue
+
+                    # Acceptance likelihood — now factors in fairness
                     is_their_expendable = their_row.get("name", "") in opp_expendable_names
-                    acceptance = min(0.95, max(0.05,
-                        0.30 * min(their_gain / 5, 1.0) +
-                        0.20 * (1 - sal_diff / 30) +
-                        0.20 * partner_prob +
-                        0.15 * profiles.get(tid, ManagerProfile(team_id="", team_name="", archetype=ManagerArchetype.PASSIVE)).trade_openness +
-                        0.15 * (1.0 if is_their_expendable else 0.3)
+
+                    # Base: how much does this trade help them (need-weighted)?
+                    help_factor = min(1.0, max(0, their_gain / 5)) * 0.25
+
+                    # Fairness: how balanced is the z-score exchange?
+                    # z_gap = 0 → perfectly fair (0.25 bonus)
+                    # z_gap = 3 → slightly unfair (0.10 bonus)
+                    # z_gap = 5+ → very unfair (0 bonus)
+                    fairness_factor = max(0, 0.25 - z_gap * 0.05)
+
+                    # Partner openness
+                    openness = profiles.get(tid, ManagerProfile(team_id="", team_name="", archetype=ManagerArchetype.PASSIVE)).trade_openness
+                    openness_factor = openness * 0.15
+
+                    # Expendable bonus: if we're targeting their expendable player
+                    expendable_factor = 0.15 if is_their_expendable else 0.05
+
+                    # Partner history
+                    history_factor = partner_prob * 0.10
+
+                    # Salary balance
+                    salary_factor = max(0, 0.10 - abs(sal_diff) / 100)
+
+                    acceptance = min(0.90, max(0.05,
+                        help_factor + fairness_factor + openness_factor +
+                        expendable_factor + history_factor + salary_factor
                     ))
 
                     # Category changes
@@ -763,8 +797,9 @@ class TradeIntelligence:
                     ))
 
         # Sort by combined value and acceptance
+        # Sort by: acceptance first (must be realistic), then my benefit
         suggestions.sort(
-            key=lambda s: 0.5 * min(s.my_benefit, 10) / 10 + 0.5 * s.acceptance_likelihood,
+            key=lambda s: s.acceptance_likelihood * 0.6 + min(s.my_benefit, 10) / 10 * 0.4,
             reverse=True,
         )
 
