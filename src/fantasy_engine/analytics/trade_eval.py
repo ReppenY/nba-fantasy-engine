@@ -50,16 +50,20 @@ def evaluate_trade(
     give_names: list[str],
     receive_names: list[str],
     roster_z_df: pd.DataFrame,
-    salary_cap: float = 200.0,
+    salary_cap: float = 233.0,
     punt_cats: list[str] | None = None,
     dynasty_weight: float = 0.3,
+    give_picks: list[str] | None = None,
+    receive_picks: list[str] | None = None,
 ) -> TradeEvaluation:
     """
-    Evaluate a trade proposal.
+    Evaluate a trade proposal (multi-player + draft picks).
 
     Args:
         give_names: Player names I'm giving away.
         receive_names: Player names I'm receiving.
+        give_picks: Draft picks I'm giving (e.g. ["2027 Round 1"]).
+        receive_picks: Draft picks I'm receiving.
         roster_z_df: DataFrame with z-scores, salary, age, years_remaining
                      for all relevant players (my roster + trade targets).
         salary_cap: League salary cap.
@@ -146,9 +150,25 @@ def evaluate_trade(
             elif col == "playoff_games":
                 schedule_bonus += (recv_val - give_val) * 0.1
 
+    # Draft pick valuation
+    pick_value_change = 0.0
+    give_pick_list = give_picks or []
+    recv_pick_list = receive_picks or []
+    if give_pick_list or recv_pick_list:
+        from fantasy_engine.analytics.pick_valuation import value_pick
+        for pick_str in recv_pick_list:
+            pick_value_change += _parse_and_value_pick(pick_str)
+        for pick_str in give_pick_list:
+            pick_value_change -= _parse_and_value_pick(pick_str)
+
     # Combined score
     current_weight = 1.0 - dynasty_weight
-    combined = current_weight * weighted_score + dynasty_weight * dynasty_diff + schedule_bonus
+    combined = (
+        current_weight * weighted_score
+        + dynasty_weight * dynasty_diff
+        + schedule_bonus
+        + pick_value_change * 0.3  # Picks are ~30% weight in combined score
+    )
 
     # Verdict
     if combined > 3.0:
@@ -213,6 +233,14 @@ def evaluate_trade(
         salary_impact, dynasty_diff, improves, hurts, verdict, punt_cats,
         sched_ctx,
     )
+    if give_pick_list or recv_pick_list:
+        pick_lines = []
+        if give_pick_list:
+            pick_lines.append(f"Giving picks: {', '.join(give_pick_list)}")
+        if recv_pick_list:
+            pick_lines.append(f"Receiving picks: {', '.join(recv_pick_list)}")
+        pick_lines.append(f"Pick value change: {pick_value_change:+.1f}")
+        explanation += "\n" + "\n".join(pick_lines)
     if position_warning:
         explanation = position_warning + "\n\n" + explanation
 
@@ -371,3 +399,35 @@ def format_trade_report(evaluation: TradeEvaluation) -> str:
     lines.append(f"  Verdict: {evaluation.verdict.upper()}")
 
     return "\n".join(lines)
+
+
+def _parse_and_value_pick(pick_str: str) -> float:
+    """
+    Parse a pick string like "2027 Round 1" or "2028 Rd 2" and return dollar value.
+
+    Supports formats:
+    - "2027 Round 1"
+    - "2028 Rd 2"
+    - "2026 R1"
+    - "2027 1st round"
+    """
+    import re
+    from fantasy_engine.analytics.pick_valuation import value_pick
+
+    pick_str = pick_str.strip().lower()
+
+    # Extract year
+    year_match = re.search(r"20\d{2}", pick_str)
+    year = int(year_match.group()) if year_match else 2026
+
+    # Extract round
+    round_match = re.search(r"(?:round|rd|r)\s*(\d)", pick_str)
+    if not round_match:
+        round_match = re.search(r"(\d)(?:st|nd|rd|th)\s*(?:round|rd|r)", pick_str)
+    if not round_match:
+        round_match = re.search(r"(\d)", pick_str.replace(str(year), ""))
+
+    round_num = int(round_match.group(1)) if round_match else 1
+
+    # Estimate pick position (assume middle of round = 6)
+    return value_pick(year, round_num, 6)

@@ -57,6 +57,8 @@ class TeamProfileResponse(BaseModel):
 class TradeRequest(BaseModel):
     give: list[str]        # Player names to give away
     receive: list[str]     # Player names to receive
+    give_picks: list[str] = []   # Picks to give, e.g. ["2027 Round 1", "2028 Round 2"]
+    receive_picks: list[str] = []  # Picks to receive
     punt_cats: list[str] = []
 
 

@@ -54,6 +54,8 @@ def evaluate(
             roster_z_df=combined,
             salary_cap=state.settings.salary_cap,
             punt_cats=req.punt_cats,
+            give_picks=req.give_picks if req.give_picks else None,
+            receive_picks=req.receive_picks if req.receive_picks else None,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
