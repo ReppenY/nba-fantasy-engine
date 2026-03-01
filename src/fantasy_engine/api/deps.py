@@ -44,6 +44,7 @@ class LeagueState:
     nba_advanced: pd.DataFrame | None = None  # Usage rate, pace, etc.
     team_contexts: dict = field(default_factory=dict)  # team -> NBATeamContext
     player_opportunities: dict = field(default_factory=dict)  # name -> PlayerOpportunity
+    team_strategy: object = None  # TeamStrategy — target/punt categories
 
 
 _state: LeagueState | None = None
@@ -427,6 +428,23 @@ def init_state_full(
         print(f"  Trade intelligence failed: {e}")
         import traceback
         traceback.print_exc()
+
+    # Compute team strategy (target categories, position needs, etc.)
+    print("Computing team strategy...")
+    try:
+        from fantasy_engine.analytics.strategy import generate_strategy
+        _state.team_strategy = generate_strategy(
+            _state.z_df, _state.all_teams, _state.all_rostered_z,
+            _state.team_id, _state.category_scarcity, _state.injuries,
+            settings.salary_cap,
+        )
+        # Set strategy punt cache so ALL modules auto-apply the build
+        from fantasy_engine.analytics.category_analysis import set_strategy_punt_cache
+        set_strategy_punt_cache(_state.team_strategy.category_build.punt_4)
+        print(f"  Strategy: target {_state.team_strategy.category_build.target_5}, "
+              f"punt {_state.team_strategy.category_build.punt_4}")
+    except Exception as e:
+        print(f"  Strategy failed: {e}")
 
     return _state
 

@@ -12,12 +12,19 @@ from fantasy_engine.analytics.zscores import ALL_CATS
 
 # Module-level scarcity cache — set by deps.py after computing scarcity
 _scarcity_cache: list | None = None
+_strategy_punt_cache: list[str] | None = None  # Categories the strategy says to punt
 
 
 def set_scarcity_cache(scarcity: list):
     """Set the global scarcity data so get_need_weights uses it automatically."""
     global _scarcity_cache
     _scarcity_cache = scarcity
+
+
+def set_strategy_punt_cache(punt_cats: list[str]):
+    """Set the strategy's punt categories so all modules auto-apply them."""
+    global _strategy_punt_cache
+    _strategy_punt_cache = punt_cats
 
 
 @dataclass
@@ -119,6 +126,9 @@ def get_need_weights(
     """
     if punt_cats is None:
         punt_cats = []
+    # If no explicit punt, use strategy's punt categories
+    if not punt_cats and _strategy_punt_cache:
+        punt_cats = _strategy_punt_cache
 
     # Build scarcity lookup — use passed value or fall back to cache
     effective_scarcity = scarcity if scarcity is not None else _scarcity_cache

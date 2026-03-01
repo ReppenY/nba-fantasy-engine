@@ -133,6 +133,8 @@ CONTRACT RULES:
   If market value > extension salary = good deal. Otherwise let them walk and re-bid at auction.
 - Players with "2026" or "3rd" contract might enter FA auction — trade targets if their owner lets them walk
 
+IMPORTANT: For ANY question about trades, pickups, draft, or lineup, FIRST call get_team_strategy to understand the category build and position needs. All recommendations should align with the strategy — don't suggest players who only help punted categories.
+
 Be direct and opinionated. Give clear "do this" recommendations with numbers from the tools."""
 
 

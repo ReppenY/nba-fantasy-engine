@@ -128,7 +128,26 @@ def generate_alerts(
     except Exception:
         pass
 
-    # 7. Minutes trend alerts for roster players
+    # 7. Strategy fit alerts
+    try:
+        from fantasy_engine.analytics.category_analysis import _strategy_punt_cache
+        if _strategy_punt_cache and free_agents_z is not None and not free_agents_z.empty:
+            target_cats = [c for c in ALL_CATS if c not in _strategy_punt_cache]
+            for _, fa in free_agents_z.nlargest(3, "z_total").iterrows():
+                fa_fits = [c for c in target_cats if fa.get(f"z_{c}", 0) > 1.0]
+                if len(fa_fits) >= 2:
+                    alerts.append(Alert(
+                        type="strategy_fit",
+                        priority="medium",
+                        title=f"FA {fa['name']} fits your build ({', '.join(fa_fits)})",
+                        detail=f"z:{fa.get('z_total', 0):+.1f}. Matches your target categories.",
+                        player=fa.get("name", ""),
+                        action=f"Target {fa['name']} in FA auction",
+                    ))
+    except Exception:
+        pass
+
+    # 8. Minutes trend alerts for roster players
     for _, row in my_roster_z.iterrows():
         min_trend = row.get("minutes_trend", 0)
         if min_trend and not pd.isna(min_trend):

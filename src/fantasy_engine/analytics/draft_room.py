@@ -236,10 +236,25 @@ class DraftRoom:
         else:
             can_afford = self._budget
 
-        # How much we need this player (based on z-score)
+        # How much we need this player (based on z-score + strategy fit)
         priority = min(1.0, max(0.0, player_val.z_above_replacement / 8))
 
-        # Max bid = fair value + small premium for high priority
+        # Strategy fit bonus: players matching target categories get higher priority
+        fills_need = []
+        try:
+            from fantasy_engine.analytics.category_analysis import _strategy_punt_cache
+            from fantasy_engine.analytics.zscores import ALL_CATS
+            if _strategy_punt_cache:
+                target_cats = [c for c in ALL_CATS if c not in _strategy_punt_cache]
+                # Check if player's name matches any in our stats to get z-scores
+                # (simplified: use tier as proxy)
+                if player_val.tier in ("elite", "starter"):
+                    priority = min(1.0, priority + 0.2)  # Boost for good players
+                    fills_need = target_cats[:3]
+        except Exception:
+            pass
+
+        # Max bid = fair value + premium for high priority
         max_bid = min(can_afford, fair * (1 + 0.15 * priority))
 
         # Action
