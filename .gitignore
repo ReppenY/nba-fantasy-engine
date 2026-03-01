@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.env
+data/fantasy.db
+data/csv/
+data/history.db
+*.egg-info/
+dist/
+build/
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# UI
+ui/node_modules/
+ui/.next/
+ui/out/
