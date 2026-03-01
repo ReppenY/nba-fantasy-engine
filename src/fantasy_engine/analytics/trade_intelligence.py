@@ -708,6 +708,19 @@ class TradeIntelligence:
                     if their_gain < -15:
                         continue
 
+                    # Position feasibility check
+                    try:
+                        from fantasy_engine.analytics.position_feasibility import check_trade_feasibility
+                        their_name = their_row.get("name", "?")
+                        recv_pos = {their_name: their_row.get("positions", "")}
+                        feas = check_trade_feasibility(
+                            self._my_roster_z, [my_player.name], [their_name], recv_pos,
+                        )
+                        if not feas.is_feasible:
+                            continue  # Skip trades that break the roster
+                    except Exception:
+                        pass
+
                     # Acceptance likelihood
                     is_their_expendable = their_row.get("name", "") in opp_expendable_names
                     acceptance = min(0.95, max(0.05,

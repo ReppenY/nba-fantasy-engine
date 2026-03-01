@@ -162,6 +162,24 @@ def evaluate_trade(
     improves = [c for c, d in cat_impact.items() if d > 0.1 and c not in punt_cats]
     hurts = [c for c, d in cat_impact.items() if d < -0.1 and c not in punt_cats]
 
+    # Position feasibility check
+    position_warning = ""
+    try:
+        from fantasy_engine.analytics.position_feasibility import check_trade_feasibility
+        # Build receive positions from the data
+        recv_positions = {}
+        for _, row in recv_df.iterrows():
+            recv_positions[row.get("name", "")] = row.get("positions", "")
+        feasibility = check_trade_feasibility(roster_z_df, give_names, receive_names, recv_positions)
+        if not feasibility.is_feasible:
+            position_warning = "WARNING: This trade leaves you unable to fill all position slots!"
+            combined -= 3.0  # Heavy penalty
+        elif feasibility.warnings:
+            position_warning = feasibility.warnings[0]
+            combined -= 0.5  # Mild penalty
+    except Exception:
+        pass
+
     # Schedule context for explanation
     sched_ctx = {}
     for label, df_side in [("give", give_df), ("receive", recv_df)]:
@@ -174,6 +192,8 @@ def evaluate_trade(
         salary_impact, dynasty_diff, improves, hurts, verdict, punt_cats,
         sched_ctx,
     )
+    if position_warning:
+        explanation = position_warning + "\n\n" + explanation
 
     return TradeEvaluation(
         give=give_side,
