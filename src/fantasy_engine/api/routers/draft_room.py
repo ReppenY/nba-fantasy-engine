@@ -115,10 +115,24 @@ def init_draft(
         my_team=req.my_team,
     )
 
-    # Register teams
+    # Register teams with their REAL remaining cap space
     teams = req.teams or list(state.team_names.values()) if state.team_names else []
     for t in teams:
         _draft_room.init_team(t)
+
+    # Set actual budgets from current roster salaries
+    if state.all_teams:
+        for tid, tdata in state.all_teams.items():
+            team_name = tdata["name"]
+            rz = tdata.get("roster_z")
+            if rz is not None and team_name in _draft_room._budgets:
+                current_salary = rz["salary"].sum() if "salary" in rz.columns else 0
+                budget = _draft_room._budgets[team_name]
+                budget.spent = round(current_salary, 1)
+                budget.remaining = round(req.budget - current_salary, 1)
+                budget.players_drafted = len(rz)
+                budget.roster_spots_left = max(0, req.roster_size - len(rz))
+                budget.max_bid = round(budget.remaining - max(0, budget.roster_spots_left - 1) * 1.0, 1)
 
     return {
         "status": "draft initialized",
