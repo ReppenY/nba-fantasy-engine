@@ -44,6 +44,10 @@ def execute_tool(name: str, input: dict) -> str:
             return _get_free_agents(state, input)
         elif name == "get_league_standings":
             return _get_league_standings(state, input)
+        elif name == "get_monopolies":
+            return _get_monopolies(state, input)
+        elif name == "get_rotation_alerts":
+            return _get_rotation_alerts(state, input)
         elif name == "get_weekly_lineup_plan":
             return _get_weekly_lineup_plan(state, input)
         elif name == "get_team_context":
@@ -347,6 +351,44 @@ def _get_league_standings(state, input):
     for i, t in enumerate(teams):
         t["power_rank"] = i + 1
     return json.dumps({"teams": teams})
+
+
+def _get_monopolies(state, input):
+    if state.all_rostered_z is None:
+        return json.dumps({"error": "Full league data needed"})
+    from fantasy_engine.analytics.monopoly import detect_monopolies, detect_player_monopoly_value
+    monopolies = detect_monopolies(state.all_rostered_z, state.z_df)
+    player_monopolies = detect_player_monopoly_value(state.all_rostered_z, state.z_df)
+    return json.dumps({
+        "category_monopolies": [
+            {"category": m.category, "total_elite": m.total_elite,
+             "you_own": m.you_own, "you_own_names": m.you_own_names,
+             "control_pct": m.league_control_pct,
+             "top_players": [p["name"] for p in m.elite_players[:5]]}
+            for m in monopolies if m.total_elite <= 20
+        ],
+        "your_irreplaceable_players": [
+            {"name": p.name, "monopoly_cats": p.monopoly_cats,
+             "score": p.monopoly_score, "difficulty": p.replacement_difficulty}
+            for p in player_monopolies if p.monopoly_score > 0
+        ],
+    })
+
+
+def _get_rotation_alerts(state, input):
+    if not state.player_trends:
+        return json.dumps({"error": "Trends not loaded"})
+    from fantasy_engine.analytics.rotation_alerts import detect_rotation_changes
+    alerts = detect_rotation_changes(state.player_trends, state.team_contexts or None)
+    return json.dumps({
+        "alerts": [
+            {"player": a.player_name, "type": a.alert_type, "severity": a.severity,
+             "min_season": a.minutes_season, "min_recent": a.minutes_recent,
+             "change": a.minutes_change, "change_pct": a.minutes_change_pct,
+             "description": a.description, "action": a.actionable}
+            for a in alerts
+        ]
+    })
 
 
 def _get_weekly_lineup_plan(state, input):

@@ -7,6 +7,24 @@ to call based on the user's question, then explains the results.
 
 TOOLS = [
     {
+        "name": "get_monopolies",
+        "description": (
+            "Detect category monopolies: find categories where few players provide elite production "
+            "and how many you control. Use when discussing trade leverage, irreplaceable players, "
+            "or category advantages. Example: 'Only 8 players in the league have z>2.0 in BLK — you have 2.'"
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_rotation_alerts",
+        "description": (
+            "Detect rotation changes across your roster: who's gaining minutes (buy signal), "
+            "who's losing minutes (sell signal), who has a new starting role. "
+            "Use when asked about player trends, minutes changes, or breakout candidates."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_player_rankings",
         "description": (
             "Get player rankings by z-score. Returns top N players sorted by total fantasy value. "

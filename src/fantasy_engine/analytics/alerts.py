@@ -120,6 +120,38 @@ def generate_alerts(
                 action=f"Look for trade partners for {row['name']}",
             ))
 
+    # 6. Rotation change alerts (from trends)
+    try:
+        from fantasy_engine.analytics.rotation_alerts import detect_rotation_changes
+        # Need to pass trends — check if available from the calling context
+        # This will be populated if state has player_trends
+    except Exception:
+        pass
+
+    # 7. Minutes trend alerts for roster players
+    for _, row in my_roster_z.iterrows():
+        min_trend = row.get("minutes_trend", 0)
+        if min_trend and not pd.isna(min_trend):
+            name = row.get("name", "")
+            if min_trend > 4:
+                alerts.append(Alert(
+                    type="minutes_up",
+                    priority="medium",
+                    title=f"{name} gaining {min_trend:.0f} min/game recently",
+                    detail=f"Minutes trending up — role expanding. Production should follow.",
+                    player=name,
+                    action=f"Hold/start {name} — rising value",
+                ))
+            elif min_trend < -4:
+                alerts.append(Alert(
+                    type="minutes_down",
+                    priority="medium",
+                    title=f"{name} losing {abs(min_trend):.0f} min/game recently",
+                    detail=f"Minutes trending down — role shrinking.",
+                    player=name,
+                    action=f"Monitor {name} — consider benching or trading",
+                ))
+
     # Sort by priority
     priority_order = {"high": 0, "medium": 1, "low": 2}
     alerts.sort(key=lambda a: priority_order.get(a.priority, 3))

@@ -105,6 +105,13 @@ def optimize_lineup(
         consistency_factor = 0.7 + 0.3 * available["consistency_rating"].fillna(0.5).values
         weighted_z = weighted_z * consistency_factor
 
+    # Minutes trend bonus: players gaining minutes are more valuable
+    if "minutes_trend" in available.columns:
+        min_trend = available["minutes_trend"].fillna(0).values
+        # +3 min trend = +10% bonus, -3 min trend = -10% penalty
+        trend_factor = 1.0 + (min_trend / 30)
+        weighted_z = weighted_z * trend_factor.clip(0.8, 1.2)
+
     available["weighted_z"] = weighted_z
 
     # Scale by games this week — use real schedule if available

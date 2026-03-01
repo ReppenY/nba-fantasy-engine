@@ -206,6 +206,42 @@ def evaluate_trade(
     improves = [c for c, d in cat_impact.items() if d > 0.1 and c not in punt_cats]
     hurts = [c for c, d in cat_impact.items() if d < -0.1 and c not in punt_cats]
 
+    # Monopoly check — warn if giving away an irreplaceable player
+    monopoly_warning = ""
+    try:
+        from fantasy_engine.analytics.monopoly import detect_player_monopoly_value
+        if hasattr(roster_z_df, "columns") and "fantasy_team_name" in roster_z_df.columns:
+            # Need all_rostered for monopoly detection
+            pass  # Can't access all_rostered from here, skip
+        else:
+            # Check if any give player is in a monopoly position using z-score thresholds
+            for _, grow in give_df.iterrows():
+                mono_cats = []
+                for cat in ALL_CATS:
+                    z_col = f"z_{cat}"
+                    if z_col in grow.index and float(grow.get(z_col, 0)) >= 2.0:
+                        # Count how many on our roster match this level
+                        roster_elite = (roster_z_df[z_col] >= 2.0).sum() if z_col in roster_z_df.columns else 0
+                        if roster_elite <= 2:
+                            mono_cats.append(cat.upper())
+                if mono_cats:
+                    monopoly_warning = f"WARNING: {grow.get('name', '')} is one of your only elite providers in {', '.join(mono_cats)}!"
+                    combined -= 1.0
+                    break
+    except Exception:
+        pass
+
+    # Rotation/minutes trend bonus
+    try:
+        recv_min_trend = recv_df["minutes_trend"].mean() if "minutes_trend" in recv_df.columns else 0
+        give_min_trend = give_df["minutes_trend"].mean() if "minutes_trend" in give_df.columns else 0
+        if recv_min_trend > give_min_trend + 2:
+            combined += 0.5  # Receiving players gaining minutes
+        elif give_min_trend > recv_min_trend + 2:
+            combined -= 0.3  # Giving away players gaining minutes
+    except Exception:
+        pass
+
     # Position feasibility check
     position_warning = ""
     try:
@@ -244,6 +280,8 @@ def evaluate_trade(
             pick_lines.append(f"Receiving picks: {', '.join(recv_pick_list)}")
         pick_lines.append(f"Expected z-score from picks: {pick_z_change:+.1f} (positive = receiving more valuable picks)")
         explanation += "\n" + "\n".join(pick_lines)
+    if monopoly_warning:
+        explanation = monopoly_warning + "\n" + explanation
     if position_warning:
         explanation = position_warning + "\n\n" + explanation
 

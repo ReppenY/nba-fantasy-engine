@@ -8,6 +8,7 @@ Decides which expiring players to re-sign given:
 - Injury status (season-ending = risky to keep at full salary)
 - Cap room constraints
 """
+import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
 
@@ -105,6 +106,13 @@ def optimize_keepers(
             af = age_curve_multiplier(age)
             if af < 0.6:
                 surplus *= 0.5  # Old players less worth keeping
+
+        # Minutes trend adjustment
+        min_trend = row.get("minutes_trend", 0)
+        if min_trend and not pd.isna(min_trend) and min_trend > 3:
+            surplus *= 1.2  # Gaining minutes = more valuable
+        elif min_trend and not pd.isna(min_trend) and min_trend < -3:
+            surplus *= 0.8  # Losing minutes = less valuable
 
         # Decision
         if surplus > 5 and z_total > 3:
