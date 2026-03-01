@@ -8,6 +8,20 @@ from fantasy_engine.analytics.trade_eval import evaluate_trade
 router = APIRouter()
 
 
+@router.get("/my-players", description="Get player names on MY roster (for trade give side).")
+def get_my_players(state: LeagueState = Depends(get_state)):
+    return sorted(state.z_df["name"].tolist())
+
+
+@router.get("/other-players", description="Get player names on OTHER teams (for trade receive side).")
+def get_other_players(state: LeagueState = Depends(get_state)):
+    if state.all_rostered_z is None:
+        return []
+    my_names = set(state.z_df["name"].str.lower())
+    others = state.all_rostered_z[~state.all_rostered_z["name"].str.lower().isin(my_names)]
+    return sorted(others["name"].tolist())
+
+
 @router.post("/evaluate", response_model=TradeResponse,
              description="Evaluate a trade proposal. Provide player names for each side.")
 def evaluate(
@@ -16,10 +30,20 @@ def evaluate(
 ):
     try:
         import pandas as pd
-        # Combine my roster with all rostered players so we can find
-        # players from other teams (the "receive" side)
+
+        # Give side: must be on MY roster
+        my_names = state.z_df["name"].str.lower().tolist()
+        for g in req.give:
+            if not any(g.lower().strip() in n for n in my_names):
+                raise ValueError(f"'{g}' is not on your roster. You can only trade players you own.")
+
+        # Receive side: must be on ANOTHER team's roster
         if state.all_rostered_z is not None:
-            combined = pd.concat([state.z_df, state.all_rostered_z], ignore_index=True)
+            other_players = state.all_rostered_z[
+                ~state.all_rostered_z["name"].str.lower().isin(my_names)
+            ]
+            # Combine my roster + other players for the evaluator
+            combined = pd.concat([state.z_df, other_players], ignore_index=True)
             combined = combined.drop_duplicates(subset=["name"], keep="first")
         else:
             combined = state.z_df
