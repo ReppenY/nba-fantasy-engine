@@ -439,6 +439,30 @@ TOOLS = [
         },
     },
     {
+        "name": "explain_system",
+        "description": (
+            "Explain how the fantasy analytics engine works: what modules exist, "
+            "what each one takes into account, and how they connect. Use this when "
+            "the user asks 'how does this work?', 'what do you consider?', 'what factors?', "
+            "'explain the system', or wants to understand the methodology behind any recommendation."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string",
+                    "description": (
+                        "Specific module to explain. Options: 'all', 'zscores', 'trades', "
+                        "'auction_values', 'keepers', 'add_drop', 'lineup', 'strategy', "
+                        "'position_scarcity', 'dynasty', 'monopoly', 'matchups', 'trends'. "
+                        "Default 'all' for overview."
+                    ),
+                    "default": "all",
+                },
+            },
+        },
+    },
+    {
         "name": "get_trade_grades",
         "description": (
             "Get graded historical trades from this season. Shows letter grades (A+ to F) "

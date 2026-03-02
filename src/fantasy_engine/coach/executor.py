@@ -66,6 +66,8 @@ def execute_tool(name: str, input: dict) -> str:
             return _get_manager_profile(state, input)
         elif name == "get_position_scarcity":
             return _get_position_scarcity(state, input)
+        elif name == "explain_system":
+            return _explain_system(state, input)
         elif name == "get_trade_grades":
             return _get_trade_grades(state, input)
         else:
@@ -805,3 +807,202 @@ def _get_position_scarcity(state, input):
         ]
 
     return json.dumps(result)
+
+
+_MODULE_DESCRIPTIONS = {
+    "zscores": {
+        "name": "Z-Score Engine",
+        "file": "zscores.py",
+        "purpose": "Foundation of all valuations. Computes how each player compares to the league average across 9 categories.",
+        "factors": [
+            "Counting stats (PTS, REB, AST, STL, BLK, 3PM): standard z = (player - mean) / std",
+            "Percentage stats (FG%, FT%): volume-weighted impact method — accounts for both accuracy AND volume (FGA/FTA)",
+            "Turnovers: inverted (fewer TO = higher z)",
+            "z_total = sum of all 9 category z-scores",
+            "Population: all players with 10+ games and 10+ minutes set the mean/std",
+        ],
+    },
+    "position_scarcity": {
+        "name": "Positional Scarcity",
+        "file": "positional_scarcity.py",
+        "purpose": "Measures how position-locked a player's production is. BLK from a center is harder to replace than PTS from a guard.",
+        "factors": [
+            "Category-position concentration: what % of elite production in each category comes from each position",
+            "Category scarcity amplifier: scarce categories (BLK 1.13x, AST 1.16x) that are also position-locked count more",
+            "Position-locked production (BLK from C): full weight bonus",
+            "Off-position rarity (low TO from PG): half weight bonus — rare and valuable",
+            "Multi-position players use whichever eligible position gives the highest bonus",
+            "Integrated into: auction values, trade eval, keeper surplus, add/drop, strategy, trade suggestions",
+        ],
+    },
+    "auction_values": {
+        "name": "Auction/Market Values",
+        "file": "draft.py",
+        "purpose": "Fair dollar price for each player, calibrated from actual 2025 dynasty auction results.",
+        "factors": [
+            "Base formula: $2.09 x z_total + $7.55 (empirical linear fit from real auction bids)",
+            "Star premium: z > 8 gets extra (name recognition + proven upside)",
+            "Minutes adjustment: 30+ min = full value, <20 min = significant discount",
+            "Age curve: <=24 = +10% dynasty premium, 32+ = declining, 36+ = steep decline",
+            "Consistency premium: consistent players (low variance) get up to +15%",
+            "Position scarcity premium: position-locked producers get up to +/-8% adjustment",
+            "Schedule-adjusted z: uses the higher of current z or schedule-projected z (captures upside)",
+        ],
+    },
+    "trades": {
+        "name": "Trade Evaluator",
+        "file": "trade_eval.py",
+        "purpose": "Multi-dimensional trade scoring with verdict from strong_accept to strong_decline.",
+        "factors": [
+            "Per-category z-score delta: impact on each of 9 categories",
+            "Need-weighted scoring: weak categories get 1.5x weight, strong get 0.7x, punted get 0x",
+            "Category scarcity weighting: BLK 1.13x, AST 1.16x, TO 0.68x",
+            "Dynasty value: age curve x contract length x z_total (30% weight by default)",
+            "Schedule bonus: receiving players with more remaining games or playoff games",
+            "Draft pick valuation: picks valued as expected z-score (Rd1 #1 = z:+4.0, discounted 5%/year)",
+            "Position scarcity: receiving position-locked players adds +0.3 per bonus unit",
+            "Monopoly check: -1.0 penalty if trading away one of your only elite providers in a category",
+            "Position feasibility: -3.0 penalty if trade breaks roster construction",
+            "Minutes trend: bonus for receiving players gaining minutes",
+            "Combined score = 70% current impact + 30% dynasty + schedule + 50% picks + position scarcity",
+        ],
+    },
+    "keepers": {
+        "name": "Keeper Optimizer",
+        "file": "keeper.py",
+        "purpose": "Decides which expiring contracts to re-sign based on surplus value.",
+        "factors": [
+            "Surplus = auction value - salary (positive = bargain to keep)",
+            "Season-ending injury: surplus x 0.3 (heavy discount for risk)",
+            "Age adjustment: old players with low age curve get surplus x 0.5",
+            "Minutes trend: gaining minutes = surplus x 1.2, losing = x 0.8",
+            "Position scarcity: +$2 surplus per unit of positional scarcity bonus",
+            "Cap enforcement: greedily keeps by surplus ranking until cap is full",
+            "Decision tiers: definitely_keep, keep, trade_before_expiry, let_walk",
+        ],
+    },
+    "add_drop": {
+        "name": "Add/Drop Optimizer",
+        "file": "add_drop.py",
+        "purpose": "Ranks free agents by team need and identifies droppable players.",
+        "factors": [
+            "Free agent ranking: need-weighted z-score (weak categories get 1.5x weight)",
+            "Position scarcity: +0.5 bonus for FAs at scarce positions",
+            "Identifies which specific weak categories each FA helps fill",
+            "Drop candidates: -z_total + redundancy penalty (strong-cat contributors are more droppable)",
+            "Position scarcity protection: -0.5 droppability for scarce-position players",
+            "Best swaps: finds optimal add/drop pairs maximizing net need-weighted z improvement",
+        ],
+    },
+    "lineup": {
+        "name": "Lineup Optimizer",
+        "file": "lineup.py",
+        "purpose": "Optimal weekly lineup using Hungarian algorithm for position assignment.",
+        "factors": [
+            "Need-weighted z per player across all 9 categories",
+            "Consistency factor: 70% base + 30% x consistency rating",
+            "Minutes trend factor: gaining minutes = up to +20% bonus",
+            "Games this week: scales by how many games each player has",
+            "Position constraints: PG/SG/SF/PF/C/G/F/Flx slots with multi-position eligibility",
+            "Linear sum assignment (scipy): mathematically optimal slot assignment",
+        ],
+    },
+    "strategy": {
+        "name": "Team Strategy Engine",
+        "file": "strategy.py",
+        "purpose": "Generates a complete rebuilding/competing strategy: which 5 categories to build, which 4 to punt.",
+        "factors": [
+            "Category scoring: 50% current strength + scarcity bonus + young core bonus + league weakness",
+            "Picks top 5 categories to dominate, bottom 4 to concede",
+            "Position needs: critical/upgrade/fine/surplus based on roster depth + best z at each position",
+            "Position scarcity escalation: thin positions get needs upgraded (fine->upgrade, upgrade->critical)",
+            "Trade targets: young (<=26), productive (z>2), affordable (<$20), fitting >=2 target categories",
+            "Extension targets: 3rd-year players contributing to target categories",
+            "FA auction targets: expiring contracts entering the free agent pool",
+            "Punt strategy auto-propagates to ALL 22 call sites across 8 modules via global cache",
+        ],
+    },
+    "dynasty": {
+        "name": "Dynasty Rankings",
+        "file": "valuation.py",
+        "purpose": "Long-term player value accounting for age trajectory and contract.",
+        "factors": [
+            "dynasty_value = z_total x age_curve x contract_factor",
+            "Age curve: <=22 = 1.15x, 23-25 = 1.25x (peak), 26-28 = 1.10x, 29-30 = 0.95x, 31+ declining",
+            "Contract factor: min(1.5, years_remaining / 3.0) — longer control = more valuable",
+            "z_per_dollar = z_total / salary",
+            "surplus_value = z_total - expected_z_for_salary (positive = bargain)",
+        ],
+    },
+    "monopoly": {
+        "name": "Monopoly Detection",
+        "file": "monopoly.py",
+        "purpose": "Finds categories where few elite players exist and how many you control.",
+        "factors": [
+            "Elite thresholds per category (z >= 2.0 for counting stats, >= 1.5 for %/TO)",
+            "Counts total elite players league-wide per category",
+            "Your ownership percentage of elite providers",
+            "Player irreplaceability score: how many categories they monopolize",
+            "Replacement difficulty: impossible (score > 1.5), very_hard, hard, moderate",
+            "Used by trade eval to prevent trading away irreplaceable players (-1.0 penalty)",
+        ],
+    },
+    "matchups": {
+        "name": "Matchup Predictor",
+        "file": "matchup_real.py + weekly_optimizer.py",
+        "purpose": "Predicts per-category win probability against your opponent and optimizes daily lineups.",
+        "factors": [
+            "Per-category z-score sums: your team vs opponent",
+            "Schedule adjustment: games this week per player",
+            "Consistency-adjusted variance for win probability",
+            "Categories classified as: target (likely win), concede (likely lose), swing (50/50)",
+            "Weekly optimizer: simulates full week day-by-day, strategically concedes lost-cause categories",
+            "Daily lineup picks 10 players maximizing END-OF-WEEK category wins",
+        ],
+    },
+    "trends": {
+        "name": "Player Trends",
+        "file": "trends.py + rotation_alerts.py",
+        "purpose": "Detects hot/cold streaks, minutes changes, and rotation shifts.",
+        "factors": [
+            "Compares last 7, 14, 30 day stats vs season averages",
+            "Trending classification: hot, rising, stable, cooling, cold",
+            "Per-category trend (which specific stats are improving/declining)",
+            "Minutes trend: recent 10-game avg vs season avg",
+            "Rotation alerts: new starters, minutes gainers/losers, role changes",
+            "Injury context: teammates out creating opportunity (minutes freed, stats available)",
+        ],
+    },
+}
+
+
+def _explain_system(state, input):
+    module = input.get("module", "all")
+
+    if module == "all":
+        overview = {
+            "system": "NBA Fantasy Analytics Engine — H2H 9-Cat Dynasty Salary Cap",
+            "total_modules": len(_MODULE_DESCRIPTIONS),
+            "core_flow": (
+                "Raw stats -> Z-scores (9 categories) -> Category scarcity weighting -> "
+                "Position scarcity bonus -> Punt strategy -> All downstream modules "
+                "(trades, lineup, add/drop, keepers, draft, matchups)"
+            ),
+            "key_design": (
+                "Everything flows through z-scores. Category scarcity (BLK, AST are scarce) "
+                "and punt strategy (target 5 cats, punt 4) auto-propagate to all 22 call sites "
+                "across 8 modules via global caches. Position scarcity adds a bonus for players "
+                "whose production is position-locked (BLK from C, AST from PG)."
+            ),
+            "modules": {
+                k: {"name": v["name"], "purpose": v["purpose"]}
+                for k, v in _MODULE_DESCRIPTIONS.items()
+            },
+        }
+        return json.dumps(overview)
+
+    desc = _MODULE_DESCRIPTIONS.get(module)
+    if desc:
+        return json.dumps(desc)
+
+    return json.dumps({"error": f"Unknown module '{module}'. Options: {', '.join(_MODULE_DESCRIPTIONS.keys())}"})
