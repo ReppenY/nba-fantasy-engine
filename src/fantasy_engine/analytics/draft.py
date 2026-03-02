@@ -128,6 +128,15 @@ def compute_auction_values(
                    np.maximum(0.5, 0.8 - 0.10 * (age - 35)))))
         z_df["auction_value"] = (z_df["auction_value"] * age_mult).clip(lower=min_bid)
 
+    # Position scarcity premium: scarce positions (C) cost more at auction
+    try:
+        from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+        pos_bonuses = z_df["name"].apply(get_pos_scarcity_bonus)
+        pos_mult = (1 + pos_bonuses * 0.08).clip(lower=0.85, upper=1.25)
+        z_df["auction_value"] = z_df["auction_value"] * pos_mult
+    except Exception:
+        pass
+
     z_df["auction_value"] = z_df["auction_value"].round(1)
 
     # Z above replacement stays for tier calculation

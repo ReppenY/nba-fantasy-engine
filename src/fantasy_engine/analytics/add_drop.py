@@ -74,6 +74,13 @@ def best_available(
                 if cat_profile and cat_profile.strength in ("weak", "average"):
                     helps.append(cat)
 
+        # Position scarcity: scarce-position FAs rank higher
+        try:
+            from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+            need_z += get_pos_scarcity_bonus(row.get("name", "")) * 0.5
+        except Exception:
+            pass
+
         candidates.append(AddCandidate(
             name=row.get("name", "Unknown"),
             z_total=round(row.get("z_total", 0), 2),
@@ -121,6 +128,13 @@ def drop_candidates(
                 redundancy_penalty += 0.3  # Penalize contributing to already-strong cats
 
         droppability = -z_total + redundancy_penalty - (salary * 0.1)
+
+        # Position scarcity: scarce-position players are less droppable
+        try:
+            from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+            droppability -= get_pos_scarcity_bonus(row.get("name", "")) * 0.5
+        except Exception:
+            pass
 
         reason_parts = []
         if z_total < -2:

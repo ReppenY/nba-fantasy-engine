@@ -247,6 +247,18 @@ def _analyze_position_needs(
         else:
             need_level = "fine"
 
+        # Escalate need level if position has a thin replacement pool
+        try:
+            from fantasy_engine.analytics.positional_scarcity import get_replacement_levels
+            rep_levels = get_replacement_levels()
+            pos_rep = rep_levels.get(pos, 0)
+            if pos_rep < -1.0 and need_level == "upgrade":
+                need_level = "critical"
+            elif pos_rep < 0 and need_level == "fine":
+                need_level = "upgrade"
+        except Exception:
+            pass
+
         # What cats should this position provide for our build?
         pos_cats = pos_cat_map.get(pos, [])
         target_cats_for_pos = [c for c in pos_cats if c in target_cats]

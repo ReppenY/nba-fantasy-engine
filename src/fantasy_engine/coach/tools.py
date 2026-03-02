@@ -419,6 +419,26 @@ TOOLS = [
         },
     },
     {
+        "name": "get_position_scarcity",
+        "description": (
+            "Get positional scarcity analysis: replacement z-score at each position (PG/SG/SF/PF/C), "
+            "and which players have the highest position scarcity bonus. A positive bonus means the "
+            "player is at a thin position (harder to replace). Use when discussing player value, "
+            "trade targets, or when position depth matters. Example: 'Centers have replacement z:+0.8 "
+            "while PGs have replacement z:+2.1 — that means any center with z>+2 is much scarcer.'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "top": {
+                    "type": "integer",
+                    "description": "Number of top/bottom players to show",
+                    "default": 10,
+                },
+            },
+        },
+    },
+    {
         "name": "get_trade_grades",
         "description": (
             "Get graded historical trades from this season. Shows letter grades (A+ to F) "

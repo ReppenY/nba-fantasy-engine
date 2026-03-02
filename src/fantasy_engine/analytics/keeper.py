@@ -91,6 +91,13 @@ def optimize_keepers(
         av = auction_values.get(name, 1.0)
         surplus = av - salary
 
+        # Position scarcity: scarce-position players are harder to replace
+        try:
+            from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+            surplus += get_pos_scarcity_bonus(name) * 2.0
+        except Exception:
+            pass
+
         # Check injury
         inj_info = injury_map.get(name.lower(), {})
         is_injured = bool(inj_info)

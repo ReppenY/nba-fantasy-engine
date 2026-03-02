@@ -64,6 +64,8 @@ def execute_tool(name: str, input: dict) -> str:
             return _get_trade_suggestions(state, input)
         elif name == "get_manager_profile":
             return _get_manager_profile(state, input)
+        elif name == "get_position_scarcity":
+            return _get_position_scarcity(state, input)
         elif name == "get_trade_grades":
             return _get_trade_grades(state, input)
         else:
@@ -89,7 +91,8 @@ def _get_player_rankings(state, input):
     for _, row in sorted_df.iterrows():
         p = {"name": row.get("name", ""), "salary": row.get("salary", 0),
              "z_total": round(row.get("z_total", 0), 2),
-             "nba_team": row.get("nba_team", ""), "status": row.get("status", "")}
+             "nba_team": row.get("nba_team", ""), "status": row.get("status", ""),
+             "pos_scarcity_bonus": round(row.get("pos_scarcity_bonus", 0), 2)}
         for cat in ALL_CATS:
             p[f"z_{cat}"] = round(row.get(f"z_{cat}", 0), 2)
         players.append(p)
@@ -111,6 +114,8 @@ def _get_player_zscores(state, input):
         "contract": row.get("contract", ""),
         "years_remaining": int(row.get("years_remaining", 1)),
         "z_total": round(row.get("z_total", 0), 2),
+        "pos_scarcity_bonus": round(row.get("pos_scarcity_bonus", 0), 2),
+        "scarcest_position": row.get("scarcest_position", ""),
     }
     for cat in ALL_CATS:
         result[f"z_{cat}"] = round(row.get(f"z_{cat}", 0), 2)
@@ -254,6 +259,7 @@ def _get_roster(state, input):
             "salary": row.get("salary", 0), "status": row.get("status", ""),
             "positions": row.get("positions", ""), "contract": row.get("contract", ""),
             "z_total": round(row.get("z_total", 0), 2),
+            "pos_scarcity_bonus": round(row.get("pos_scarcity_bonus", 0), 2),
         })
     return json.dumps({"roster": players, "count": len(players)})
 
@@ -690,6 +696,20 @@ def _get_advanced_metrics(state, input):
             for s in state.category_scarcity
         ]
 
+    # Position scarcity
+    try:
+        from fantasy_engine.analytics.positional_scarcity import get_replacement_levels
+        pos_stats = get_replacement_levels()
+        if pos_stats:
+            result["position_scarcity"] = {
+                pos: {"count": d.get("count", 0), "starter_avg": d.get("starter_avg", 0),
+                      "replacement_avg": d.get("replacement_avg", 0),
+                      "dropoff": d.get("dropoff", 0), "bonus": d.get("bonus", 0)}
+                for pos, d in pos_stats.items()
+            }
+    except Exception:
+        pass
+
     return json.dumps(result)
 
 
@@ -747,3 +767,41 @@ def _get_trade_grades(state, input):
             for gt in graded
         ]
     })
+
+
+def _get_position_scarcity(state, input):
+    from fantasy_engine.analytics.positional_scarcity import get_replacement_levels
+    pos_stats = get_replacement_levels()
+    if not pos_stats:
+        return json.dumps({"error": "Position scarcity not computed"})
+
+    top = input.get("top", 10)
+    result = {
+        "position_stats": {
+            pos: {"count": d.get("count", 0), "starter_avg_z": d.get("starter_avg", 0),
+                  "replacement_avg_z": d.get("replacement_avg", 0),
+                  "quality_dropoff": d.get("dropoff", 0), "scarcity_bonus": d.get("bonus", 0)}
+            for pos, d in pos_stats.items()
+        },
+        "explanation": "Drop-off = gap between starter tier and replacement tier z-scores. Steeper drop-off = scarcer position = positive bonus.",
+    }
+
+    # Top players by scarcity bonus
+    source = state.all_rostered_z if state.all_rostered_z is not None else state.z_df
+    if "pos_scarcity_bonus" in source.columns:
+        top_df = source.nlargest(top, "pos_scarcity_bonus")
+        result["most_scarce_players"] = [
+            {"name": row.get("name", ""), "position": row.get("scarcest_position", ""),
+             "z_total": round(row.get("z_total", 0), 2),
+             "pos_scarcity_bonus": round(row.get("pos_scarcity_bonus", 0), 2)}
+            for _, row in top_df.iterrows()
+        ]
+        bottom_df = source.nsmallest(top, "pos_scarcity_bonus")
+        result["deepest_position_players"] = [
+            {"name": row.get("name", ""), "position": row.get("scarcest_position", ""),
+             "z_total": round(row.get("z_total", 0), 2),
+             "pos_scarcity_bonus": round(row.get("pos_scarcity_bonus", 0), 2)}
+            for _, row in bottom_df.iterrows()
+        ]
+
+    return json.dumps(result)

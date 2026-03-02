@@ -83,6 +83,8 @@ def _row_to_zscores(row) -> PlayerZScores:
         games_played=int(row.get("games_played", 0)),
         **{f"z_{c}": round(row.get(f"z_{c}", 0), 3) for c in ALL_CATS},
         z_total=round(row.get("z_total", 0), 3),
+        pos_scarcity_bonus=round(row.get("pos_scarcity_bonus", 0), 3),
+        scarcest_position=row.get("scarcest_position", ""),
         schedule_adjusted_z=round(row.get("schedule_adjusted_z", 0), 3),
         ros_value=round(row.get("ros_value", 0), 3),
         consistency_rating=round(row.get("consistency_rating", 0), 3),

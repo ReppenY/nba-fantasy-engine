@@ -30,6 +30,8 @@ export interface PlayerZScores {
   z_ft_pct: number;
   z_tov: number;
   z_total: number;
+  pos_scarcity_bonus?: number;
+  scarcest_position?: string;
   status?: string;
 }
 

@@ -19,6 +19,9 @@ class PlayerZScores(BaseModel):
     z_ft_pct: float = 0
     z_tov: float = 0
     z_total: float = 0
+    # Position scarcity
+    pos_scarcity_bonus: float = 0
+    scarcest_position: str = ""
     # Advanced metrics
     schedule_adjusted_z: float = 0
     ros_value: float = 0

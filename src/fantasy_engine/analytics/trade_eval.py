@@ -172,6 +172,20 @@ def evaluate_trade(
         # (discounted because pick production is uncertain)
     )
 
+    # Position scarcity: receiving scarce-position players is more valuable
+    pos_scarcity_note = ""
+    try:
+        from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+        give_pos_bonus = sum(get_pos_scarcity_bonus(n) for n in give_names)
+        recv_pos_bonus = sum(get_pos_scarcity_bonus(n) for n in receive_names)
+        pos_change = recv_pos_bonus - give_pos_bonus
+        combined += pos_change * 0.3
+        if abs(pos_change) > 0.2:
+            direction = "receiving" if pos_change > 0 else "giving away"
+            pos_scarcity_note = f"Position scarcity: {direction} players at thinner positions ({pos_change:+.2f})"
+    except Exception:
+        pass
+
     # Verdict
     if combined > 3.0:
         verdict = "strong_accept"
@@ -281,6 +295,8 @@ def evaluate_trade(
         explanation += "\n" + "\n".join(pick_lines)
     if monopoly_warning:
         explanation = monopoly_warning + "\n" + explanation
+    if pos_scarcity_note:
+        explanation += "\n" + pos_scarcity_note
     if position_warning:
         explanation = position_warning + "\n\n" + explanation
 

@@ -255,6 +255,38 @@ def init_state_full(
         top_scarce = sorted(scarcity, key=lambda s: s.scarcity_index, reverse=True)[:3]
         print(f"  Scarcity: most scarce = {', '.join(s.category.upper() for s in top_scarce)}")
 
+        # Compute positional scarcity (within-position z vs pool-wide z)
+        try:
+            from fantasy_engine.analytics.positional_scarcity import (
+                compute_positional_scarcity, set_position_scarcity_cache,
+            )
+            pos_source = _state.all_rostered_z if _state.all_rostered_z is not None else _state.z_df
+            pos_result = compute_positional_scarcity(pos_source, num_teams=12)
+            pos_stats = pos_result.attrs.get("pos_stats", {})
+
+            # Set global cache
+            name_to_bonus = dict(zip(pos_source["name"], pos_result["pos_scarcity_bonus"]))
+            set_position_scarcity_cache(name_to_bonus, pos_stats)
+
+            # Inject columns into all DataFrames
+            name_to_pos = dict(zip(pos_source["name"], pos_result["scarcest_position"]))
+            for target_df in [_state.z_df, _state.all_rostered_z]:
+                if target_df is not None and "name" in target_df.columns:
+                    target_df["pos_scarcity_bonus"] = target_df["name"].map(name_to_bonus).fillna(0.0)
+                    target_df["scarcest_position"] = target_df["name"].map(name_to_pos).fillna("")
+
+            for tid_inner, tdata_inner in _state.all_teams.items():
+                rz_inner = tdata_inner.get("roster_z")
+                if rz_inner is not None and "name" in rz_inner.columns:
+                    rz_inner["pos_scarcity_bonus"] = rz_inner["name"].map(name_to_bonus).fillna(0.0)
+                    rz_inner["scarcest_position"] = rz_inner["name"].map(name_to_pos).fillna("")
+
+            parts = [f"{p}: n={d['count']} starter={d.get('starter_avg',0):.1f} repl={d.get('replacement_avg',0):.1f} drop={d.get('dropoff',0):.1f} bonus={d.get('bonus',0):+.2f}"
+                     for p, d in sorted(pos_stats.items())]
+            print(f"  Position scarcity: {'; '.join(parts)}")
+        except Exception as e:
+            print(f"  Positional scarcity failed: {e}")
+
         adv = compute_advanced_metrics(_state.z_df, sched, cons, scarcity)
         _state.advanced_metrics = adv
         print(f"  Advanced metrics: {len(adv)} players (my roster)")

@@ -680,6 +680,13 @@ class TradeIntelligence:
                     z_val = float(their_row.get(z_col, 0) or 0)
                     my_gain += z_val * my_needs.get(cat, 1.0)
 
+                # Position scarcity tilt
+                try:
+                    from fantasy_engine.analytics.positional_scarcity import get_pos_scarcity_bonus
+                    my_gain += get_pos_scarcity_bonus(their_row.get("name", "")) * 0.3
+                except Exception:
+                    pass
+
                 if my_gain <= 0:
                     continue
 

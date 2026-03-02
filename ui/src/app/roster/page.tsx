@@ -73,6 +73,9 @@ export default function RosterPage() {
                 <th className="text-right py-2 px-2 cursor-pointer hover:text-zinc-300 font-bold" onClick={() => toggleSort("z_total")}>
                   TOTAL{sortCol === "z_total" ? (sortAsc ? " ^" : " v") : ""}
                 </th>
+                <th className="text-right py-2 px-2 cursor-pointer hover:text-zinc-300" onClick={() => toggleSort("pos_scarcity_bonus")}>
+                  Pos+{sortCol === "pos_scarcity_bonus" ? (sortAsc ? " ^" : " v") : ""}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -100,6 +103,9 @@ export default function RosterPage() {
                   })}
                   <td className={`py-2 px-2 text-right font-bold font-mono ${p.z_total > 0 ? "text-green-400" : "text-red-400"}`}>
                     {p.z_total > 0 ? "+" : ""}{p.z_total.toFixed(1)}
+                  </td>
+                  <td className={`py-2 px-2 text-right font-mono text-xs ${(p.pos_scarcity_bonus ?? 0) > 0.3 ? "text-amber-400" : (p.pos_scarcity_bonus ?? 0) < -0.3 ? "text-zinc-600" : "text-zinc-500"}`}>
+                    {(p.pos_scarcity_bonus ?? 0) > 0 ? "+" : ""}{(p.pos_scarcity_bonus ?? 0).toFixed(2)}
                   </td>
                 </tr>
               ))}
